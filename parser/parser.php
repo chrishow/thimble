@@ -4,13 +4,13 @@ require_once 'spyc.php';
 require_once 'simple_html_dom.php';
 
 class ThimbleParser {
-	
+
 	protected $variables = '/{([A-Za-z][A-Za-z0-9\-]*)}/i';
-	
+
 	protected $blocks = '/{block:([A-Za-z][A-Za-z0-9]*)}(.*?){\/block:\\1}/is';
-		
+
 	public $type = '';
-	
+
 	public $defaults = array(
 		'RSS'				=> '/rss',
 		'Favicon' 			=> 'http://assets.tumblr.com/images/default_avatar_16.gif',
@@ -22,23 +22,23 @@ class ThimbleParser {
 		'PortraitURL-64' 	=> "http://assets.tumblr.com/images/default_avatar_64.gif",
 		'PortraitURL-96' 	=> "http://assets.tumblr.com/images/default_avatar_96.gif",
 		'PortraitURL-128' 	=> "http://assets.tumblr.com/images/default_avatar_128.gif",
-		'CopyrightYears'	=> '2007-2010',	
+		'CopyrightYears'	=> '2007-2010',
 	);
 
   public $localization = array();
-	
-	public $template = array();	
-		
+
+	public $template = array();
+
 	public function __construct($data = array(), $lang = array(), $type = 'index') {
 		$this->type = $type;
 		$this->template = array_merge($this->defaults, Spyc::YAMLLoad($data));
     $this->localization = Spyc::YAMLLoad($lang);
 	}
-	
+
 	public function block_pattern($block_name) {
 		return '/{block:('.$block_name.')}(.*?){\/block:\\1}/is';
 	}
-	
+
 	public function render_block($name, $html) {
 		return preg_replace_callback(
 			$this->block_pattern($name),
@@ -47,19 +47,20 @@ class ThimbleParser {
 				'return $matches[2];'
 			),
 			$html
-		);	
+		);
 	}
-	
+
 	public function render_variable($name, $replacement, $block) {
 		$block = preg_replace('/{'.$name.'}/i', $replacement, $block);
 		$block = preg_replace('/{Plaintext'.$name.'}/i', htmlentities($replacement), $block);
 		$block = preg_replace('/{JS'.$name.'}/i', json_encode($replacement), $block);
 		$block = preg_replace('/{JSPlaintext'.$name.'}/i', json_encode(htmlentities($replacement)), $block);
-		$block = preg_replace('/{URLEncoded'.$name.'}/i', urlencode($replacement), $block);		
+		$block = preg_replace('/{URLEncoded'.$name.'}/i', urlencode($replacement), $block);
 		return $block;
 	}
-	
+
 	public function render_post_variable($name, $post, $block) {
+                $post[$name] = isset($post[$name]) ? $post[$name] : null;
 		return $this->render_variable($name, $post[$name], $block);
 	}
 
@@ -76,10 +77,10 @@ class ThimbleParser {
 
 	public function parse($document, $appearance_options = array()) {
 		$doc = $document;
-		
+
 		// Generate Options from Meta tags
 		$doc = $this->generate_meta($doc, $appearance_options);
-		
+
 		// Generate based on page type
 		if ($this->type == 'index') {
 			$doc = $this->build_index($doc);
@@ -87,51 +88,51 @@ class ThimbleParser {
 
     // Localize
     $doc = $this->localize($doc);
-		
-		// render Global Blocks		
-		if ($this->template['Description']) {
+
+		// render Global Blocks
+		if (isset($this->template['Description']) && $this->template['Description']) {
 			$doc = $this->render_block('Description', $doc);
 		}
-		if ($this->template['Following']) {
+		if (isset($this->template['Following']) && $this->template['Following']) {
 			$doc = $this->render_following($this->template['Following'], $doc);
 		} else {
 			$doc = $this->strip_block('Following',$doc);
 		}
-		if ($this->template['AskLabel']) {
+		if (isset($this->template['AskLabel']) && $this->template['AskLabel']) {
 			$doc = $this->render_variable('AskLabel', $this->template['AskLabel'], $doc);
 			$doc = $this->render_block('AskEnabled',$doc);
 		} else {
 			$doc = $this->strip_block('AskEnabled',$doc);
 		}
-		if ($this->template['SubmissionsEnabled']) {
+		if (isset($this->template['SubmissionsEnabled']) && $this->template['SubmissionsEnabled']) {
 			$doc = $this->render_block('SubmissionsEnabled',$doc);
 		} else {
 			$doc = $this->strip_block('SubmissionsEnabled',$doc);
-		}	
-		if ($this->template['Pages']) {
+		}
+		if (isset($this->template['Pages']) && $this->template['Pages']) {
 			$doc = $this->get_pages($this->template['Pages'],$doc);
 		} else {
 			$doc = $this->strip_block('HasPages',$doc);
 		}
-		if ($this->template['TwitterUsername']) {
+		if (isset($this->template['TwitterUsername']) && $this->template['TwitterUsername']) {
 			$doc = $this->render_block('Twitter',$doc);
-			$doc = $this->render_variable('TwitterUsername', $this->template['TwitterUsername'], $doc);			
+			$doc = $this->render_variable('TwitterUsername', $this->template['TwitterUsername'], $doc);
 		} else {
 			$doc = $this->strip_block('Twitter',$doc);
 		}
-		
+
 		// Render remaining global variables;
 		$doc = $this->seek($doc);
 		// Cleanup additional blocks
 		return $this->cleanup($doc);
 	}
-	
+
 	public function generate_meta($document, $appearance = array()) {
 		$dom = new simple_html_dom();
 		@$dom->load($document);
     return $this->build_options($dom, $appearance);
   }
-	
+
 	public function build_options($dom, $meta_overrides = array()) {
     $meta_elements = $dom->find("meta[name]");
     $meta = array(
@@ -178,7 +179,7 @@ class ThimbleParser {
 		}
     return $this->parse_options($meta, $dom->save());
 	}
-	
+
 	public function parse_options($options, $doc) {
 		foreach ($options['Color'] as $name => $color) {
 			$doc = $this->render_variable("color:$name", $color, $doc);
@@ -220,7 +221,7 @@ class ThimbleParser {
 		}
 		return $doc;
 	}
-	
+
 	public function build_index($doc) {
 		// probably should build these dynamically
 		$pages = array(
@@ -233,7 +234,7 @@ class ThimbleParser {
 		$doc = $this->get_posts($doc);
 		return $doc;
 	}
-	
+
   public function localize($doc) {
     if (count($this->localization)) {
       foreach (array_keys($this->localization) as $key) {
@@ -251,7 +252,7 @@ class ThimbleParser {
 			foreach ($pages as $page) {
 				foreach ($matcher[2] as $page_block) {
 					$page_block = $this->render_variable('Label', $page['Label'], $page_block);
-					$page_block = $this->render_variable('URL', $page['URL'], $page_block);					
+					$page_block = $this->render_variable('URL', $page['URL'], $page_block);
 					$page_group .= $page_block;
 				}
 			}
@@ -260,7 +261,7 @@ class ThimbleParser {
 		$html = $this->render_block('HasPages', $html);
 		return $html;
 	}
-	
+
 	public function render_following($following, $document) {
 		$html = $document;
 		$has_following_block = preg_match_all($this->block_pattern('Followed'), $html, $matcher);
@@ -272,7 +273,7 @@ class ThimbleParser {
 					$follows = $this->render_variable('FollowedTitle', $user['Title'], $follows);
 					$follows = $this->render_variable('FollowedURL', $user['URL'], $follows);
 					$portraits = array(
-						'PortraitURL-16', 'PortraitURL-24', 'PortraitURL-30', 
+						'PortraitURL-16', 'PortraitURL-24', 'PortraitURL-30',
 						'PortraitURL-40', 'PortraitURL-48', 'PortraitURL-64',
 						'PortraitURL-96', 'PortraitURL-128'
 					);
@@ -283,15 +284,17 @@ class ThimbleParser {
 				}
 			}
 		}
-		
+
 		$html = preg_replace($this->block_pattern('Followed'), $following_group, $html);
 		$html = $this->render_block('Following', $html);
 		return $html;
 	}
-	
+
 	public function render_pagination($pages, $document) {
 		$html = $document;
-		if ($pages['NextPage'] || $pages['PreviousPage']) {
+                $pages['PreviousPage'] = isset($pages['PreviousPage']) ? $pages['PreviousPage'] : null;
+
+                if ($pages['NextPage'] || $pages['PreviousPage']) {
 			if ($pages['NextPage']) {
 				$html = $this->render_variable('NextPage', $pages['NextPage'], $html);
 				$html = $this->render_block('NextPage', $html);
@@ -303,7 +306,7 @@ class ThimbleParser {
 				$html = $this->render_block('PreviousPage', $html);
 			} else {
 				$html = $this->strip_block('PreviousPage', $html);
-			}			
+			}
 			$html = $this->render_block('Pagination', $html);
 		} else {
 			$html = $this->strip_block('Pagination', $html);
@@ -359,7 +362,7 @@ class ThimbleParser {
 
     return $html;
   }
-	
+
 	public function get_posts($document) {
 		$html = preg_replace_callback(
 			$this->block_pattern('Posts'),
@@ -368,7 +371,7 @@ class ThimbleParser {
 		);
 		return $html;
 	}
-	
+
 	public function render_posts($matches) {
     $block = $matches[2];
     $html = '';
@@ -384,7 +387,7 @@ class ThimbleParser {
     }
     return $html;
 	}
-	
+
 	public function render_post($post, $block) {
     $html = $this->prepare_post($post, $block);
 		$post_type = $post['Type'];
@@ -399,7 +402,7 @@ class ThimbleParser {
           break;
         case 'Photo':
           $markup = $this->render_photo_post($post, $post_block);
-          break;	
+          break;
         case 'Quote':
           $markup = $this->render_quote_post($post, $post_block);
           break;
@@ -414,7 +417,7 @@ class ThimbleParser {
           break;
         case 'Video':
           $markup = $this->render_video_post($post, $post_block);
-          break;	
+          break;
         case 'Answer':
           $markup = $this->render_answer_post($post, $post_block);
           break;
@@ -426,42 +429,42 @@ class ThimbleParser {
     }
     return $html;
 	}
-	
+
 	public function prepare_post($post, $markup) {
 		$block = $markup;
 		$block = $this->render_post_variable('Permalink', $post, $block);
 		$block = $this->render_post_variable('PostId', $post, $block);
 		$block = $this->render_post_date($post, $block);
-		if ($post['Tags']) {
+		if (isset($post['Tags']) && $post['Tags']) {
 			$block = $this->render_tags_for_post($post, $block);
 		}
-		
-		if ($post['NoteCount']) {
+
+		if (isset($post['NoteCount']) && $post['NoteCount']) {
 			$block = $this->render_post_variable('NoteCount', $post, $block);
 			$block = $this->render_block('NoteCount', $block);
 			$block = $this->render_variable('NoteCountWithLabel', $post['NoteCount']." notes", $block);
 		} else {
 			$block = $this->strip_block('NoteCount',$block);
 		}
-		
-		if ($post['Reblog']) {
+
+		if (isset($post['Reblog']) && $post['Reblog']) {
 			$block = $this->render_reblog_info($post, $block);
     } else {
       $block = $this->render_block('NotReblog', $block);
     }
 
-    if ($post['ContentSource']) {
+    if (isset($post['ContentSource']) && $post['ContentSource']) {
       $block = $this->render_content_source($post, $block);
     }
-		
+
 		$block = $this->render_block('More', $block);
 		return $block;
 	}
-	
+
 	public function strip_block($name, $html) {
 		return preg_replace($this->block_pattern($name), '', $html);
 	}
-	
+
 	public function seek($context) {
 		preg_match_all($this->variables, $context, $match);
 		foreach ($match[1] as $variable) {
@@ -473,11 +476,11 @@ class ThimbleParser {
 		}
 		return $context;
 	}
-	
+
 	public function cleanup($document) {
 		return preg_replace($this->blocks, '', $document);
 	}
-	
+
 	protected function render_post_date($post, $block) {
 		$html = $block;
 		$time = $post['Timestamp'];
@@ -486,8 +489,8 @@ class ThimbleParser {
         while (strtotime('-'.$day_difference.' day', $right_now) >= $time)
         {
             $day_difference++;
-        }		
-		
+        }
+
 		$html = $this->render_post_variable('Timestamp', $post, $html);
 		$html = $this->render_variable('TimeAgo', $day_difference." days ago", $html);
 		$html = $this->render_variable('DayOfMonth', strftime('%e',$time), $html);
@@ -495,13 +498,13 @@ class ThimbleParser {
 		$html = $this->render_variable('DayOfWeek', strftime('%A',$time), $html);
 		$html = $this->render_variable('ShortDayOfWeek', strftime('%a',$time), $html);
 		$html = $this->render_variable('DayOfWeekNumber', strftime('%u',$time), $html);
-		$html = $this->render_variable('DayOfYear', strftime('%j',$time), $html);		
-		$html = $this->render_variable('WeekOfYear', strftime('%V',$time), $html);		
+		$html = $this->render_variable('DayOfYear', strftime('%j',$time), $html);
+		$html = $this->render_variable('WeekOfYear', strftime('%V',$time), $html);
 		$html = $this->render_variable('Month', strftime('%B',$time), $html);
 		$html = $this->render_variable('ShortMonth', strftime('%b',$time), $html);
 		$html = preg_replace('/{MonthNumber}|{MonthNumberWithZero}/i', strftime('%m',$time), $html);
 		$html = $this->render_variable('Year', strftime('%Y',$time), $html);
-		$html = $this->render_variable('ShortYear', strftime('%y',$time), $html);		
+		$html = $this->render_variable('ShortYear', strftime('%y',$time), $html);
 		$html = $this->render_variable('AmPm', strftime('%P',$time), $html);
 		$html = $this->render_variable('CapitalAmPm', strftime('%p',$time), $html);
 		$html = $this->render_variable('12Hour', strftime('%l',$time), $html);
@@ -510,26 +513,26 @@ class ThimbleParser {
 		$html = $this->render_variable('Minutes', strftime('%M',$time), $html);
 		$html = $this->render_variable('Seconds', strftime('%S',$time), $html);
 
-    if ($post['Reblog']) {
+    if (isset($post['Reblog']) && $post['Reblog']) {
       $html = $this->render_locale_string('Reblogged TimeAgo from ReblogParentName',$html, $day_difference." days ago", $post['Reblog']['ReblogParentName']);
     }
 
 		$html = $this->render_block('Date', $html);
 		return $html;
 	}
-	
+
 	protected function render_tags_for_post($post, $block) {
 		$html = $block;
 		$tags = $post['Tags'];
 		$has_tag_block = preg_match_all($this->block_pattern('Tags'), $html, $matcher);
-		$tag_group = '';		
+		$tag_group = '';
 		if ($has_tag_block) {
 			foreach ($tags as $tag) {
 				$safe_tag = preg_replace('/\s/','_',strtolower($tag));
 				foreach ($matcher[2] as $tag_block) {
 					$tag_block = $this->render_variable('Tag', $tag, $tag_block);
 					$tag_block = $this->render_variable('URLSafeTag', $safe_tag, $tag_block);
-					$tag_block = preg_replace('/{TagURL}|{TagURLChrono}/i', "/tagged/".$safe_tag, $tag_block);					
+					$tag_block = preg_replace('/{TagURL}|{TagURLChrono}/i', "/tagged/".$safe_tag, $tag_block);
 					$tag_group .= $tag_block;
 				}
 			}
@@ -538,17 +541,17 @@ class ThimbleParser {
 		$html = preg_replace($this->block_pattern('Tags'), $tag_group, $html);
 		return $html;
 	}
-	
+
 	protected function render_reblog_info($post, $block) {
 		$html = $block;
 		$reblog = $post['Reblog'];
-		$root = $reblog['Root'];
-		
+		$root = isset($reblog['Root']) ? $reblog['Root'] : null;
+
 		$html = $this->render_post_variable('ReblogParentName', $reblog, $html);
 		$html = $this->render_post_variable('ReblogParentTitle', $reblog, $html);
 		$html = $this->render_post_variable('ReblogParentURL', $reblog, $html);
 		$portraits = array(
-			'ReblogParentPortraitURL-16', 'ReblogParentPortraitURL-24', 'ReblogParentPortraitURL-30', 
+			'ReblogParentPortraitURL-16', 'ReblogParentPortraitURL-24', 'ReblogParentPortraitURL-30',
 			'ReblogParentPortraitURL-40', 'ReblogParentPortraitURL-48', 'ReblogParentPortraitURL-64',
 			'ReblogParentPortraitURL-96', 'ReblogParentPortraitURL-128'
 		);
@@ -557,13 +560,13 @@ class ThimbleParser {
 		}
 		$html = $this->render_block('Reblog', $html);
 		$html = $this->render_block('RebloggedFrom', $html);
-		
+
 		if ($root) {
 			$html = $this->render_post_variable('ReblogRootName', $root, $html);
 			$html = $this->render_post_variable('ReblogRootTitle', $root, $html);
 			$html = $this->render_post_variable('ReblogRootURL', $root, $html);
 			$root_portraits = array(
-				'ReblogRootPortraitURL-16', 'ReblogRootPortraitURL-24', 'ReblogRootPortraitURL-30', 
+				'ReblogRootPortraitURL-16', 'ReblogRootPortraitURL-24', 'ReblogRootPortraitURL-30',
 				'ReblogRootPortraitURL-40', 'ReblogRootPortraitURL-48', 'ReblogRootPortraitURL-64',
 				'ReblogRootPortraitURL-96', 'ReblogRootPortraitURL-128'
 			);
@@ -572,7 +575,7 @@ class ThimbleParser {
 			}
 			$html = $this->render_block('RebloggedFromReblog', $html);
 		}
-		
+
 		return $html;
 	}
 
@@ -596,11 +599,11 @@ class ThimbleParser {
 
     return $block;
   }
-	
+
 	protected function render_text_post($post, $block) {
 		$html = '';
 		$html = $this->render_post_variable('Body', $post, $block);
-		if ($post['Title']) {
+		if (isset($post['Title']) && $post['Title']) {
 			$html = $this->render_post_variable('Title', $post, $html);
 			$html = $this->render_block('Title', $html);
 		} else {
@@ -608,7 +611,7 @@ class ThimbleParser {
 		}
 		return $html;
 	}
-	
+
 	protected function render_quote_post($post, $block) {
 		$html = '';
 		$html = $this->render_post_variable('Quote', $post, $block);
@@ -621,7 +624,7 @@ class ThimbleParser {
 		}
 		return $html;
 	}
-	
+
 	protected function render_photo_post($post, $block) {
 		$html = $block;
 		$photo_sizes = array(
@@ -637,7 +640,7 @@ class ThimbleParser {
 		} else {
 			$html = $this->strip_block('Caption',$html);
 		}
-		if ($post['PhotoURL-HighRes']) {
+		if (isset($post['PhotoURL-HighRes']) && $post['PhotoURL-HighRes']) {
 			$html = $this->render_post_variable('PhotoURL-HighRes', $post, $html);
 			$html = $this->render_block('HighRes', $html);
 		} else {
@@ -646,15 +649,15 @@ class ThimbleParser {
 		if ($post['LinkURL']) {
 			$html = $this->render_post_variable('LinkURL', $post, $html);
 			$html = $this->render_variable(
-				'LinkOpenTag', 
-				'<a href="'.$post['LinkURL'].'">', 
+				'LinkOpenTag',
+				'<a href="'.$post['LinkURL'].'">',
 				$html
 			);
 			$html = $this->render_variable('LinkCloseTag', '</a>', $html);
 		}
 		return $html;
 	}
-	
+
 	protected function render_link_post($post, $block) {
 		$html = '';
 		$html = $this->render_post_variable('URL', $post, $block);
@@ -671,7 +674,7 @@ class ThimbleParser {
 		}
 		return $html;
 	}
-	
+
 	protected function render_chat_post($post, $block) {
 		$html = '';
 		$has_lines = preg_match_all($this->block_pattern('Lines'), $block, $matcher);
@@ -694,19 +697,19 @@ class ThimbleParser {
 			}
 		}
 		$html = preg_replace($this->block_pattern('Lines'), $line_markup, $block);
-		if ($post['Title']) {
+		if (isset($post['Title']) && $post['Title']) {
 			$html = $this->render_post_variable('Title', $post, $html);
 			$html = $this->render_block('Title', $html);
 		} else {
-			$html = $this->strip_block('Title',$html);			
+			$html = $this->strip_block('Title',$html);
 		}
 		return $html;
 	}
-	
+
 	protected function render_audio_post($post, $block) {
 		$html = $block;
 		$audio_file = $post['AudioFile'];
-		if ($post['ExternalAudioURL']) {
+		if (isset($post['ExternalAudioURL']) && $post['ExternalAudioURL']) {
 			$audio_file = $post['ExternalAudioURL'];
 			$html = $this->render_post_variable('ExternalAudioURL', $post, $html);
 			$html = $this->render_block('ExternalAudio', $html);
@@ -717,45 +720,45 @@ class ThimbleParser {
 		$html = $this->render_variable('AudioPlayerBlack', $this->create_audio_player($audio_file,'black'), $html);
 		$html = $this->render_variable('AudioPlayerWhite', $this->create_audio_player($audio_file), $html);
 		$html = $this->render_variable('AudioPlayerGrey', $this->create_audio_player($audio_file, 'grey'), $html);
-		
+
 		$html = $this->render_post_variable('PlayCount', $post, $html);
 		$html = $this->render_variable('FormatPlayCount', number_format($post['PlayCount']), $html);
 		$html = $this->render_variable('PlayCountWithLabel', number_format($post['PlayCount'])." plays", $html);
-		
-		if ($post['Caption']) {
+
+		if (isset($post['Caption']) && $post['Caption']) {
 			$html = $this->render_post_variable('Caption', $post, $html);
 			$html = $this->render_block('Caption', $html);
 		} else {
 			$html = $this->strip_block('Caption', $html);
 		}
-		if ($post['AlbumArtURL']) {
+		if (isset($post['AlbumArtURL']) && $post['AlbumArtURL']) {
 			$html = $this->render_post_variable('AlbumArtURL', $post, $html);
 			$html = $this->render_block('AlbumArt', $html);
 		} else {
 			$html = $this->strip_block('AlbumArt', $html);
 		}
-		if ($post['Artist']) {
+		if (isset($post['Artist']) && $post['Artist']) {
 			$html = $this->render_post_variable('Artist', $post, $html);
 			$html = $this->render_block('Artist', $html);
 		} else {
 			$html = $this->strip_block('Artist', $html);
 		}
-		if ($post['Album']) {
+		if (isset($post['Album']) && $post['Album']) {
 			$html = $this->render_post_variable('Album', $post, $html);
 			$html = $this->render_block('Album', $html);
 		} else {
 			$html = $this->strip_block('Album', $html);
 		}
-		if ($post['TrackName']) {
+		if (isset($post['TrackName']) && $post['TrackName']) {
 			$html = $this->render_post_variable('TrackName', $post, $html);
 			$html = $this->render_block('TrackName', $html);
 		} else {
 			$html = $this->strip_block('TrackName', $html);
 		}
-		
-		return $html;		
+
+		return $html;
 	}
-	
+
 	protected function render_video_post($post, $block) {
 		$html = $block;
 		$html = $this->render_post_variable('Video-500', $post, $html);
@@ -769,14 +772,14 @@ class ThimbleParser {
 		}
 		return $html;
 	}
-	
+
 	protected function render_answer_post($post, $block) {
 		$html = $block;
 		$html = $this->render_post_variable('Question', $post, $html);
 		$html = $this->render_post_variable('Answer', $post, $html);
 		$html = $this->render_post_variable('Asker', $post, $html);
 		$asker_portraits = array(
-			'AskerPortraitURL-16', 'AskerPortraitURL-24', 'AskerPortraitURL-30', 
+			'AskerPortraitURL-16', 'AskerPortraitURL-24', 'AskerPortraitURL-30',
 			'AskerPortraitURL-40', 'AskerPortraitURL-48', 'AskerPortraitURL-64',
 			'AskerPortraitURL-96', 'AskerPortraitURL-128'
 		);
@@ -787,7 +790,7 @@ class ThimbleParser {
     $html = $this->render_locale_string('Asker asked', $html, $post['Asker']);
 		return $html;
 	}
-	
+
 	protected function create_audio_player($audio_file, $color = '') {
 		if ($color && ($color != 'white')) {
 			if ($color == 'grey') {
@@ -803,9 +806,9 @@ class ThimbleParser {
 		return <<<PLAYER
 <script type="text/javascript" language="javascript" src="http://assets.tumblr.com/javascript/tumblelog.js?16"></script><span id="audio_player_459260683">[<a href="http://www.adobe.com/shockwave/download/download.cgi?P1_Prod_Version=ShockwaveFlash" target="_blank">Flash 9</a> is required to listen to audio.]</span><script type="text/javascript">replaceIfFlash(9,"audio_player_459260683",'<div class="audio_player"><embed type="application/x-shockwave-flash" src="http://demo.tumblr.com/swf/audio_player$color.swf?audio_file=$audio_file" height="27" width="207" quality="best"></embed></div>')</script>
 PLAYER;
-	
+
 	}
-		
+
 }
 
 ?>
